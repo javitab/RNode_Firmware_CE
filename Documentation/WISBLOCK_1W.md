@@ -204,15 +204,33 @@ advertising field is omitted; actual BLE transmit power is unchanged. The full
 name, UUID and flags together require 33 bytes and cannot fit in one 31-byte
 legacy advertisement.
 
-This layout makes the name available without waiting for a scan response and
-is a compatibility trial for macOS clients matching an exact device name.
+This layout makes the name available without waiting for a scan response.
+On the tested Mac, a CoreBluetooth probe received both the advertised local
+name and the Nordic UART UUID merged from the scan response.
 Service discovery still requires an active scanner receiving the scan response.
 Use a 10-15 second discovery window if the client allows it, and disconnect a
 phone's scanner connection before testing another client: only one BLE
-peripheral connection is configured. The change does not establish the cause
-of a particular Mac's discovery failure; external macOS discovery and pairing
-must still be checked. BLE address type, PHY, PIN and MITM requirements are
-unchanged.
+peripheral connection is configured. BLE address type, PHY, PIN and MITM
+requirements are unchanged.
+
+#### macOS cached names after changing firmware
+
+macOS can retain an old GAP device name after a board is reflashed. On the
+tested Mac (macOS 27.2, build 26B5091g), CoreBluetooth received local name
+`RNode 2824` and the Nordic UART service UUID at about -40 dBm, while
+`CBPeripheral.name` still returned the previous firmware's `MeshCore-9547`.
+This stale cached name, not missing advertisements, prevented MeshChatX
+4.10.7's exact `device.name` match from finding `ble://RNode 2824`; Mac
+LightBlue also listed the device under the old name.
+
+Connect once using the cached name: for this board, select `MeshCore-9547` in
+LightBlue or temporarily set MeshChatX's port to `ble://MeshCore-9547`.
+Enter `123456` if prompted. Connecting lets macOS refresh the GAP name; after
+refreshing discovery, use `ble://RNode 2824` when the updated name appears.
+These names are examples from the tested board; use the actual cached and
+advertised names for another board. Do not change pairing security or reflash
+the board merely to address a cached name. Discovery is confirmed; successful
+pairing and encrypted UART exchange still need separate verification.
 
 On `wisblock_1w` only, KISS request bytes `C0 46 FF C0` return the configured
 name and current Bluetooth status without toggling BLE, pairing, or writing
@@ -241,8 +259,11 @@ The target has compiled with RAK nRF52 BSP 1.3.3 and Crypto 0.4.0. On one
 connected board, application-only serial DFU and EEPROM provisioning succeeded;
 the device's running firmware hash and stored target hash matched the compiled
 BIN. USB diagnostics reported advertising active, and the operator confirmed
-the named device appeared in a phone's BLE scanner. This does not verify BLE
-pairing, encrypted UART transport or RF output. On real hardware,
+the named device appeared in a phone's BLE scanner. A Mac CoreBluetooth probe
+also received the current advertised name and Nordic UART UUID; its stale
+cached peripheral name explained the exact-name discovery failure described
+above. This does not verify BLE pairing, encrypted UART transport or RF output.
+On real hardware,
 verify cold boot without USB, initial pairing, incorrect-PIN rejection, bonded
 reconnect, runtime BLE off/on, USB and BLE KISS exchange, bidirectional LoRa
 including split packets, RF output/spectral compliance and power/temperature

@@ -53,6 +53,7 @@
 #define IRQ_TX_DONE_MASK_6X         0x01
 #define IRQ_RX_DONE_MASK_6X         0x02
 #define IRQ_HEADER_DET_MASK_6X      0x10
+#define IRQ_HEADER_ERROR_MASK_6X    0x20
 #define IRQ_PREAMBLE_DET_MASK_6X    0x04
 #define IRQ_PAYLOAD_CRC_ERROR_MASK_6X 0x40
 #define IRQ_ALL_MASK_6X             0b0100001111111111
@@ -365,10 +366,18 @@ int sx126x::begin()
 
   if (_rxen != -1) { pinMode(_rxen, OUTPUT); }
 
+  #if defined(WISBLOCK_1W)
+    enableTCXO();
+    uint8_t regulator = 0x01;
+    executeOpcode(OP_REGULATOR_MODE_6X, &regulator, 1);
+  #endif
+
   calibrate();
   calibrate_image(_frequency);
 
+  #if !defined(WISBLOCK_1W)
   enableTCXO();
+  #endif
 
   loraMode();
   standby();
@@ -619,7 +628,7 @@ void sx126x::onReceive(void(*callback)(uint8_t, int))
   _onReceive = callback;
 
   if (callback) {
-    pinMode(_dio0, INPUT);
+    if (_dio0 != -1) { pinMode(_dio0, INPUT); }
 
     // set preamble and header detection irqs, plus dio0 mask
     uint8_t buf[8];
@@ -641,6 +650,7 @@ void sx126x::onReceive(void(*callback)(uint8_t, int))
     buf[7] = 0x00;
 
     executeOpcode(OP_SET_IRQ_FLAGS_6X, buf, 8);
+    if (_dio0 == -1) { return; }
 #ifdef SPI_HAS_NOTUSINGINTERRUPT
     _spiModem->usingInterrupt(digitalPinToInterrupt(_dio0));
 #endif
@@ -649,11 +659,31 @@ void sx126x::onReceive(void(*callback)(uint8_t, int))
 
     attachInterrupt(digitalPinToInterrupt(_dio0), onIntRise[_index], RISING);
   } else {
+    if (_dio0 == -1) { return; }
     detachInterrupt(digitalPinToInterrupt(_dio0));
 #ifdef SPI_HAS_NOTUSINGINTERRUPT
     _spiModem->notUsingInterrupt(digitalPinToInterrupt(_dio0));
 #endif
   }
+}
+
+void sx126x::poll()
+{
+    if (_dio0 != -1 || !_radio_online || !_onReceive) { return; }
+
+    uint8_t irq[2] = {0};
+    executeOpcodeRead(OP_GET_IRQ_STATUS_6X, irq, 2);
+    if ((irq[1] & IRQ_RX_DONE_MASK_6X) == 0) { return; }
+
+    // Freeze the RX buffer while the normal RNode framing callback reads it.
+    standby();
+    bool valid = getPacketValidity();
+    uint8_t rxbuf[2] = {0};
+    executeOpcodeRead(OP_RX_BUFFER_STATUS_6X, rxbuf, 2);
+    if (valid && (irq[1] & IRQ_HEADER_ERROR_MASK_6X) == 0 && rxbuf[0] > 0) {
+        handleDio0Rise();
+    }
+    receive();
 }
 
 void sx126x::receive(int size)
@@ -697,7 +727,9 @@ void sx126x::sleep()
 
 void sx126x::enableTCXO() {
   if (_tcxo) {
-    #if BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_XIAO_ESP32S3
+    #if defined(WISBLOCK_1W)
+      uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x01, 0x40};
+    #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_XIAO_ESP32S3
       uint8_t buf[4] = {MODE_TCXO_3_3V_6X, 0x00, 0x00, 0xFF};
     #elif BOARD_MODEL == BOARD_TBEAM
       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};

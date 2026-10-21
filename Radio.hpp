@@ -127,6 +127,7 @@ public:
     virtual void flush() = 0;
 
     virtual void onReceive(void(*callback)(uint8_t, int)) = 0;
+    virtual void poll() {}
 
     virtual void receive(int size = 0) = 0;
     virtual void standby() = 0;
@@ -489,6 +490,8 @@ public:
   void flush();
 
   void onReceive(void(*callback)(uint8_t, int));
+
+  void poll() override;
 
   void receive(int size = 0);
   void standby();

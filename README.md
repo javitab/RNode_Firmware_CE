@@ -37,6 +37,7 @@ You must have at least version `2.1.3` of `rnodeconf` installed to update your R
 | Board name | Link | Transceiver | MCU | Description | 
 | :--- | :---: | :---: | :---: | :---: |
 | RAK4631 | [Buy here](https://store.rakwireless.com/products/rak4631-lpwan-node?m=5&h=wisblock-core) | SX1262 | nRF52 |
+| WisBlock 1W (RAK3401 + RAK13302 on RAK19007) | [Build and use](Documentation/WISBLOCK_1W.md) | SX1262 + SKY66122 | nRF52840 | Experimental; BLE PIN `123456`, up to 22 dBm chip drive |
 | LilyGO T-BEAM v1.1 | [Buy here](https://www.lilygo.cc/products/t-beam-v1-1-esp32-lora-module) | SX1276/8 or SX1262 | ESP32 |
 | LilyGO T-Beam Supreme | [Buy here](https://lilygo.cc/products/t-beam-supreme) | SX1262 | ESP32-S3 | 
 | LilyGO LoRa32 v1.0 | [Buy here](https://www.lilygo.cc/products/lora32-v1-0) | SX1276/8 | ESP32 |

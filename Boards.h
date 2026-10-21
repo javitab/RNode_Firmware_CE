@@ -161,6 +161,10 @@
   #define PIN_DISP_SLEEP -1
   #define VALIDATE_FIRMWARE true
 
+  #if defined(WISBLOCK_1W) && (BOARD_MODEL != BOARD_RAK4631 || BOARD_VARIANT != MODEL_12)
+    #error "WISBLOCK_1W requires the RAK4631-compatible board and model 0x12"
+  #endif
+
   #if defined(ENABLE_TCXO)
       #define HAS_TCXO true
   #endif
@@ -1206,7 +1210,16 @@
       #define EEPROM_SIZE 296
       #define EEPROM_OFFSET EEPROM_SIZE-EEPROM_RESERVED
       #define BLE_MANUFACTURER "RAK Wireless"
-      #define BLE_MODEL "RAK4640"
+      #if defined(WISBLOCK_1W)
+        #define BLE_MODEL "RAK3401 + RAK13302"
+        #define BLE_PAIRING_PIN 123456
+        #undef HAS_INPUT
+        #define HAS_INPUT false
+        #undef HAS_PMU
+        #define HAS_PMU false
+      #else
+        #define BLE_MODEL "RAK4640"
+      #endif
 
       #if BOARD_VARIANT == MODEL_11 || BOARD_VARIANT == MODEL_12
       #define INTERFACE_COUNT 1
@@ -1224,6 +1237,18 @@
       const int8_t interface_pins[INTERFACE_COUNT][10] = { 
                   // SX1262
           {
+            #if defined(WISBLOCK_1W)
+              26, // pin_ss
+               3, // pin_sclk
+              30, // pin_mosi
+              29, // pin_miso
+               9, // pin_busy (WB_IO5)
+              -1, // IRQ polling; do not use the reference's floating P15
+               4, // pin_reset (WB_IO4)
+              -1, // pin_txen (DIO2 controls TX/RX)
+              21, // pin_rxen (WB_IO3 enables the FEM in both RX and TX)
+              34  // module power enable (WB_IO2 / 3V3_S)
+            #else
               42, // pin_ss
               43, // pin_sclk
               44, // pin_mosi
@@ -1234,6 +1259,7 @@
               -1, // pin_txen
               37, // pin_rxen
               -1  // pin_tcxo_enable
+            #endif
           }
       };
       #elif BOARD_VARIANT == MODEL_13 || BOARD_VARIANT == MODEL_14 || BOARD_VARIANT == MODEL_21

@@ -146,6 +146,15 @@ firmware-genericesp32: check_bt_buffers
 firmware-rak4631:
 	arduino-cli compile --fqbn rakwireless:nrf52:WisCoreRAK4631Board $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x51\" \"-DBOARD_VARIANT=0x12\""
 
+firmware-wisblock_1w:
+	mkdir -p build/wisblock_1w/sketch/RNode_Firmware_CE
+	cp *.h *.hpp *.cpp *.ino build/wisblock_1w/sketch/RNode_Firmware_CE/
+	cp -R src Fonts build/wisblock_1w/sketch/RNode_Firmware_CE/
+	arduino-cli compile build/wisblock_1w/sketch/RNode_Firmware_CE --fqbn rakwireless:nrf52:WisCoreRAK4631Board $(VFLAG) -e --output-dir build/wisblock_1w --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x51\" \"-DBOARD_VARIANT=0x12\" \"-DWISBLOCK_1W\""
+
+test-wisblock_1w:
+	python3 -m unittest discover -s tests -p 'test_wisblock_1w.py'
+
 firmware-rak4631_sx1280:
 	arduino-cli compile --fqbn rakwireless:nrf52:WisCoreRAK4631Board $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x51\" \"-DBOARD_VARIANT=0x14\""
 

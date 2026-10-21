@@ -393,15 +393,24 @@ char bt_devname[11];
     if (bt_state != BT_STATE_OFF) {
       bt_allow_pairing = false;
       bt_state = BT_STATE_OFF;
+      #if defined(WISBLOCK_1W)
+        Bluefruit.Advertising.stop();
+        if (Bluefruit.connected()) { Bluefruit.disconnect(Bluefruit.connHandle()); }
+      #endif
     }
   }
 
   void bt_disable_pairing() {
     // Serial.println("BT Disable pairing");
+    #if defined(WISBLOCK_1W)
+    bt_allow_pairing = bt_state != BT_STATE_OFF;
+    pairing_pin = BLE_PAIRING_PIN;
+    #else
     bt_allow_pairing = false;
     pairing_pin = 0;
+    #endif
     bt_ssp_pin = 0;
-    bt_state = BT_STATE_ON;
+    if (bt_state != BT_STATE_OFF) { bt_state = BT_STATE_ON; }
   }
 
   void bt_flush() { if (bt_state == BT_STATE_CONNECTED) { SerialBT.flushTXD(); } }
@@ -409,6 +418,12 @@ char bt_devname[11];
   void bt_pairing_complete(uint16_t conn_handle, uint8_t auth_status) {
     // Serial.println("BT pairing complete");
     BLEConnection* connection = Bluefruit.Connection(conn_handle);
+    #if defined(WISBLOCK_1W)
+    if (bt_state == BT_STATE_OFF) {
+      connection->disconnect();
+      return;
+    }
+    #endif
     if (auth_status == BLE_GAP_SEC_STATUS_SUCCESS) {
       ble_gap_conn_sec_mode_t security = connection->getSecureMode();
       // Serial.println("Bonding success");
@@ -456,6 +471,12 @@ char bt_devname[11];
 
   void bt_connect_callback(uint16_t conn_handle) {
     // Serial.println("Connect callback");
+    #if defined(WISBLOCK_1W)
+    if (bt_state == BT_STATE_OFF) {
+      Bluefruit.Connection(conn_handle)->disconnect();
+      return;
+    }
+    #endif
     bt_state = BT_STATE_CONNECTED;
     cable_state = CABLE_STATE_DISCONNECTED;
 
@@ -467,14 +488,26 @@ char bt_devname[11];
 
   void bt_disconnect_callback(uint16_t conn_handle, uint8_t reason) {
     // Serial.println("Disconnect callback");
+    #if defined(WISBLOCK_1W)
+    if (bt_state != BT_STATE_OFF) {
+        bt_state = BT_STATE_ON;
+        bt_allow_pairing = true;
+        Bluefruit.Advertising.start(0);
+    }
+    #else
     if (reason != BLE_GAP_SEC_STATUS_SUCCESS) {
         bt_state = BT_STATE_ON;
     }
+    #endif
   }
 
   void bt_update_passkey() {
     // Serial.println("Update passkey");
+    #if defined(WISBLOCK_1W)
+    pairing_pin = BLE_PAIRING_PIN;
+    #else
     pairing_pin = random(899999)+100000;
+    #endif
     bt_ssp_pin = pairing_pin;
   }
 
@@ -487,6 +520,9 @@ char bt_devname[11];
   bool bt_setup_hw() {
     // Serial.println("Setup HW");
     if (!bt_ready) {
+      #if defined(WISBLOCK_1W)
+      bt_enabled = true;
+      #else
       #if HAS_EEPROM 
           if (EEPROM.read(eeprom_addr(ADDR_CONF_BT)) == BT_ENABLE_BYTE) {
       #else
@@ -496,12 +532,13 @@ char bt_devname[11];
       } else {
         bt_enabled = false;
       }
+      #endif
       Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
       Bluefruit.autoConnLed(false);
       if (Bluefruit.begin()) {
         uint32_t pin = bt_get_passkey();
-        char pin_char[6];
-        sprintf(pin_char,"%lu", pin);
+        char pin_char[7];
+        snprintf(pin_char, sizeof(pin_char), "%06lu", (unsigned long)pin);
 
         Bluefruit.setTxPower(8);    // Check bluefruit.h for supported values
         Bluefruit.Security.setIOCaps(true, false, false); // display, yes; yes / no, no; keyboard, no
@@ -545,18 +582,24 @@ char bt_devname[11];
       Bluefruit.setName(bt_devname);
       bledis.setManufacturer(BLE_MANUFACTURER);
       bledis.setModel(BLE_MODEL);
-      // start device information service
-      bledis.begin();
-      blebas.begin();
 
       // Guard to ensure SerialBT service is not duplicated through BT being power cycled
       if (!SerialBT_init) {
+          bledis.begin();
+          blebas.begin();
           SerialBT.bufferTXD(true); // enable buffering
 
           SerialBT.setPermission(SECMODE_ENC_WITH_MITM, SECMODE_ENC_WITH_MITM); // enable encryption for BLE serial
           SerialBT.begin();
           SerialBT_init = true;
       }
+
+      #if defined(WISBLOCK_1W)
+        Bluefruit.Advertising.restartOnDisconnect(false);
+        Bluefruit.Advertising.clearData();
+        Bluefruit.ScanResponse.clearData();
+        bt_allow_pairing = true;
+      #endif
 
       Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
       Bluefruit.Advertising.addTxPower();
@@ -590,8 +633,8 @@ char bt_devname[11];
     if (bt_state == BT_STATE_OFF) bt_start();
 
     uint32_t pin = bt_get_passkey();
-    char pin_char[6];
-    sprintf(pin_char,"%lu", pin);
+    char pin_char[7];
+    snprintf(pin_char, sizeof(pin_char), "%06lu", (unsigned long)pin);
     Bluefruit.Security.setPIN(pin_char);
 
     bt_allow_pairing = true;
@@ -603,8 +646,10 @@ char bt_devname[11];
   void bt_debond_all() { }
 
   void update_bt() {
+    #if !defined(WISBLOCK_1W)
     if (bt_allow_pairing && millis()-bt_pairing_started >= BT_PAIRING_TIMEOUT) {
       bt_disable_pairing();
     }
+    #endif
   }
 #endif

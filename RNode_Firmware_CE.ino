@@ -1241,6 +1241,24 @@ void serial_callback(uint8_t sbyte) {
           }
     } else if (command == CMD_BT_CTRL) {
       #if HAS_BLUETOOTH || HAS_BLE
+        #if defined(WISBLOCK_1W)
+        if (sbyte == 0xFF) {
+          serial_write(FEND);
+          serial_write(CMD_BT_CTRL);
+          serial_write(0xFF);
+          serial_write(0x01);
+          escaped_serial_write(bt_ready);
+          escaped_serial_write(bt_state);
+          escaped_serial_write(bt_enabled);
+          escaped_serial_write(bt_allow_pairing);
+          escaped_serial_write(bt_ready && Bluefruit.Advertising.isRunning());
+          escaped_serial_write(bt_advertising_started);
+          for (size_t i = 0; i < sizeof(bt_devname) && bt_devname[i]; i++) {
+            escaped_serial_write(bt_devname[i]);
+          }
+          serial_write(FEND);
+        } else
+        #endif
         if (sbyte == 0x00) {
           bt_stop();
           bt_conf_save(false);

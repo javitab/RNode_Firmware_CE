@@ -385,6 +385,9 @@ char bt_devname[11];
 
 #elif MCU_VARIANT == MCU_NRF52
     uint32_t pairing_pin = 0;
+  #if defined(WISBLOCK_1W)
+    bool bt_advertising_started = false;
+  #endif
 
   uint8_t eeprom_read(uint32_t mapped_addr);
 
@@ -611,7 +614,11 @@ char bt_devname[11];
       // Use Scan response for Name
       Bluefruit.ScanResponse.addName();
 
+      #if defined(WISBLOCK_1W)
+      bt_advertising_started = Bluefruit.Advertising.start(0);
+      #else
       Bluefruit.Advertising.start(0);
+      #endif
 
       bt_state = BT_STATE_ON;
      }

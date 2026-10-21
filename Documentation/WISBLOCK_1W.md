@@ -122,6 +122,13 @@ bootloader, not an arbitrary USB volume or serial-only DFU bootloader. A UF2
 bootloader can reject a mismatched family ID or an image outside its permitted
 application region.
 
+On the tested RAK UF2 bootloader 0.4.3, application-size metadata used by
+RNode's firmware hash calculation was not populated by the UF2 transfer: the
+running hash was the SHA-256 of empty input. Application-only serial DFU
+populated it correctly. If this occurs, use serial DFU below and compare the
+device's `rnodeconf "$PORT" -L` result with the BIN hash before setting the
+expected hash. Do not store an empty-input hash to make validation pass.
+
 This UF2 procedure writes the compiled application image directly. If firmware
 signature/hash validation or host provisioning is needed, use the serial DFU
 and `rnodeconf` procedure below instead; UF2 flashing does not perform that
@@ -182,6 +189,22 @@ it can pair and control the modem while BLE is enabled. Do not treat the PIN
 as authentication of a trusted operator. Use a BLE-capable RNode host/client;
 an ordinary terminal or a client supporting only Classic SPP will not work.
 
+### Read-only USB discovery diagnostics
+
+Use a BLE scanner such as LightBlue or nRF Connect with Bluetooth permission
+granted; the normal macOS Bluetooth settings list may omit this Nordic UART
+peripheral. Scan for `RNode XXXX` or service UUID
+`6E400001-B5A3-F393-E0A9-E50E24DCCA9E`.
+
+On `wisblock_1w` only, KISS request bytes `C0 46 FF C0` return the configured
+name and current Bluetooth status without toggling BLE, pairing, or writing
+configuration. The response is a KISS-escaped frame with command `46`, selector
+`FF`, format version `01`, then six one-byte fields: stack ready, RNode Bluetooth
+state, enabled, pairing allowed, advertising running, and initial advertising
+start succeeded. Remaining bytes are the ASCII device name (no NUL terminator).
+State values follow `Config.h`; an advertising-running flag confirms the stack
+reports advertising, not that an external receiver has detected it.
+
 Configure matching radio parameters on the connected host and peer, within
 the module's supported band: for example 915000000 Hz, 125000 Hz bandwidth,
 SF9, coding rate 4/5 and `txpower=22`. The firmware keeps the RNode sync word,
@@ -196,13 +219,16 @@ timeout behavior, reconnect/stop/start, encrypted UART permissions, rejected
 Just Works bonds, rejected CRC/header-error/empty packets and 22 dBm drive.
 These checks require Python 3 and a host `c++` compiler.
 
-The target has compiled with RAK nRF52 BSP 1.3.3 and Crypto 0.4.0. Neither
-compilation nor mocks verify a physical BLE link or radio. On real hardware,
+The target has compiled with RAK nRF52 BSP 1.3.3 and Crypto 0.4.0. On one
+connected board, application-only serial DFU and EEPROM provisioning succeeded;
+the device's running firmware hash and stored target hash matched the compiled
+BIN. USB diagnostics reported advertising active, and the operator confirmed
+the named device appeared in a phone's BLE scanner. This does not verify BLE
+pairing, encrypted UART transport or RF output. On real hardware,
 verify cold boot without USB, initial pairing, incorrect-PIN rejection, bonded
 reconnect, runtime BLE off/on, USB and BLE KISS exchange, bidirectional LoRa
 including split packets, RF output/spectral compliance and power/temperature
-stability at 22 dBm drive. Flashing and provisioning also remain unverified
-on a physical device.
+stability at 22 dBm drive.
 
 ## Source and attribution
 

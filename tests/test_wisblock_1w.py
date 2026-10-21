@@ -154,14 +154,16 @@ struct Security {
 };
 struct Advertising {
     int starts = 0, stops = 0, clears = 0;
+    bool running = false;
     void restartOnDisconnect(bool) {}
     void clearData() { ++clears; }
     void addFlags(int) {}
     void addTxPower() {}
     void addService(BLEUart&) {}
     void addName() {}
-    void start(int) { ++starts; }
-    void stop() { ++stops; }
+    bool start(int) { ++starts; running = true; return true; }
+    bool isRunning() { return running; }
+    void stop() { ++stops; running = false; }
 };
 struct Periph {
     template<class T> void setDisconnectCallback(T) {}
@@ -192,12 +194,35 @@ struct MD5 {
 };
 uint8_t eeprom_read(uint32_t) { return 0; }
 #include "Bluetooth.h"
+std::string diagnostic;
+void serial_write(uint8_t byte) { diagnostic += char(byte); }
+void escaped_serial_write(uint8_t byte) {
+    if (byte == 0xc0) { serial_write(0xdb); serial_write(0xdc); }
+    else if (byte == 0xdb) { serial_write(0xdb); serial_write(0xdd); }
+    else { serial_write(byte); }
+}
+#define FEND 0xc0
+#define CMD_BT_CTRL 0x46
+void query_status(uint8_t sbyte) {
+DIAGNOSTIC_QUERY
+}
 int main() {
     assert(bt_init());
     assert(Bluefruit.Security.mitm);
 #ifdef WISBLOCK_1W
     assert(bt_enabled && bt_allow_pairing && bt_state == BT_STATE_ON);
     assert(Bluefruit.Security.pin == "123456");
+    assert(bt_advertising_started);
+    int initial_starts = Bluefruit.Advertising.starts;
+    query_status(0xff);
+    const unsigned char expected_status[] = {
+        0xc0, 0x46, 0xff, 1, 1, BT_STATE_ON, 1, 1, 1, 1
+    };
+    assert(diagnostic.size() == sizeof(expected_status) + strlen(bt_devname) + 1);
+    assert(memcmp(diagnostic.data(), expected_status, sizeof(expected_status)) == 0);
+    assert(diagnostic.substr(sizeof(expected_status), strlen(bt_devname)) == bt_devname);
+    assert(uint8_t(diagnostic.back()) == FEND);
+    assert(Bluefruit.Advertising.starts == initial_starts);
     assert(SerialBT.read_permission == 3 && SerialBT.write_permission == 3);
     now = 40000;
     update_bt();
@@ -214,6 +239,10 @@ int main() {
     bt_stop();
     assert(!bt_allow_pairing && bt_state == BT_STATE_OFF);
     assert(Bluefruit.Advertising.stops == 1 && Bluefruit.disconnects == 1);
+    diagnostic.clear();
+    query_status(0xff);
+    assert(diagnostic[5] == BT_STATE_OFF && diagnostic[8] == 0);
+    assert(Bluefruit.Advertising.stops == 1);
     int starts = Bluefruit.Advertising.starts;
     bt_disconnect_callback(0, 19);
     bt_connect_callback(0);
@@ -233,6 +262,12 @@ int main() {
 #endif
 }
 """
+        handler = (ROOT / "RNode_Firmware_CE.ino").read_text()
+        handler = handler[handler.index("} else if (command == CMD_BT_CTRL)"):]
+        query = method(handler, "if (sbyte == 0xFF)")
+        source = source.replace(
+            "DIAGNOSTIC_QUERY", "#ifdef WISBLOCK_1W\n" + query + "\n#endif"
+        )
         for target in (False, True):
             with self.subTest(wisblock_1w=target):
                 self.compile_run(source, {"bluefruit.h": ""},

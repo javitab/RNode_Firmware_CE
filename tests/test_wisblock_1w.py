@@ -154,13 +154,18 @@ struct Security {
 };
 struct Advertising {
     int starts = 0, stops = 0, clears = 0;
+    int flags = 0, names = 0, services = 0, power_fields = 0, bytes = 0;
+    int fast_interval = 32, slow_interval = 244, fast_timeout = 30;
     bool running = false;
     void restartOnDisconnect(bool) {}
-    void clearData() { ++clears; }
-    void addFlags(int) {}
-    void addTxPower() {}
-    void addService(BLEUart&) {}
-    void addName() {}
+    void clearData() { ++clears; bytes = flags = names = services = power_fields = 0; }
+    bool add(int count) { if (bytes + count > 31) return false; bytes += count; return true; }
+    bool addFlags(int) { ++flags; return add(3); }
+    bool addTxPower() { ++power_fields; return add(3); }
+    bool addService(BLEUart&) { ++services; return add(18); }
+    bool addName() { ++names; return add(12); }
+    void setInterval(int fast, int slow) { fast_interval = fast; slow_interval = slow; }
+    void setFastTimeout(int timeout) { fast_timeout = timeout; }
     bool start(int) { ++starts; running = true; return true; }
     bool isRunning() { return running; }
     void stop() { ++stops; running = false; }
@@ -213,6 +218,14 @@ int main() {
     assert(bt_enabled && bt_allow_pairing && bt_state == BT_STATE_ON);
     assert(Bluefruit.Security.pin == "123456");
     assert(bt_advertising_started);
+    assert(Bluefruit.Advertising.flags == 1 && Bluefruit.Advertising.names == 1);
+    assert(Bluefruit.Advertising.services == 0 && Bluefruit.Advertising.power_fields == 0);
+    assert(Bluefruit.Advertising.bytes == 15);
+    assert(Bluefruit.ScanResponse.services == 1 && Bluefruit.ScanResponse.names == 0);
+    assert(Bluefruit.ScanResponse.bytes == 18);
+    assert(Bluefruit.Advertising.fast_interval == 160);
+    assert(Bluefruit.Advertising.slow_interval == 160);
+    assert(Bluefruit.Advertising.fast_timeout == 0);
     int initial_starts = Bluefruit.Advertising.starts;
     query_status(0xff);
     const unsigned char expected_status[] = {
@@ -252,10 +265,14 @@ int main() {
     assert(bt_allow_pairing && bt_get_passkey() == 123456);
     assert(SerialBT.starts == 1 && bledis.starts == 1);
     assert(Bluefruit.Advertising.clears == 2);
+    assert(Bluefruit.Advertising.bytes == 15 && Bluefruit.ScanResponse.bytes == 18);
 #else
     assert(!bt_enabled && !bt_allow_pairing && bt_state == BT_STATE_OFF);
     assert(Bluefruit.Security.pin == "100000");
     bt_enable_pairing();
+    assert(Bluefruit.Advertising.bytes == 24 && Bluefruit.ScanResponse.bytes == 12);
+    assert(Bluefruit.Advertising.fast_interval == 32);
+    assert(Bluefruit.Advertising.slow_interval == 244);
     now = 40000;
     update_bt();
     assert(!bt_allow_pairing && pairing_pin == 0);

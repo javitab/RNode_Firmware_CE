@@ -604,6 +604,17 @@ char bt_devname[11];
         bt_allow_pairing = true;
       #endif
 
+      #if defined(WISBLOCK_1W)
+      // Flags, full name and a 128-bit UUID cannot all fit in 31 bytes.
+      // Put the name in every advertisement and the service in scan responses.
+      bool advertising_data_ok =
+          Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+      advertising_data_ok = Bluefruit.Advertising.addName() && advertising_data_ok;
+      advertising_data_ok = Bluefruit.ScanResponse.addService(SerialBT) && advertising_data_ok;
+      Bluefruit.Advertising.setInterval(160, 160); // 100 ms in 0.625 ms units
+      Bluefruit.Advertising.setFastTimeout(0);
+      bt_advertising_started = advertising_data_ok && Bluefruit.Advertising.start(0);
+      #else
       Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
       Bluefruit.Advertising.addTxPower();
 
@@ -614,9 +625,6 @@ char bt_devname[11];
       // Use Scan response for Name
       Bluefruit.ScanResponse.addName();
 
-      #if defined(WISBLOCK_1W)
-      bt_advertising_started = Bluefruit.Advertising.start(0);
-      #else
       Bluefruit.Advertising.start(0);
       #endif
 

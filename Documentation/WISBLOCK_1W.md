@@ -196,6 +196,24 @@ granted; the normal macOS Bluetooth settings list may omit this Nordic UART
 peripheral. Scan for `RNode XXXX` or service UUID
 `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`.
 
+For this target, the primary legacy advertisement contains the discoverability
+flags and complete device name (15 bytes total); the scan response contains
+the complete Nordic UART service UUID (18 bytes). Advertising uses a steady
+100 ms interval with no fast/slow transition or expiry. The optional TX-power
+advertising field is omitted; actual BLE transmit power is unchanged. The full
+name, UUID and flags together require 33 bytes and cannot fit in one 31-byte
+legacy advertisement.
+
+This layout makes the name available without waiting for a scan response and
+is a compatibility trial for macOS clients matching an exact device name.
+Service discovery still requires an active scanner receiving the scan response.
+Use a 10-15 second discovery window if the client allows it, and disconnect a
+phone's scanner connection before testing another client: only one BLE
+peripheral connection is configured. The change does not establish the cause
+of a particular Mac's discovery failure; external macOS discovery and pairing
+must still be checked. BLE address type, PHY, PIN and MITM requirements are
+unchanged.
+
 On `wisblock_1w` only, KISS request bytes `C0 46 FF C0` return the configured
 name and current Bluetooth status without toggling BLE, pairing, or writing
 configuration. The response is a KISS-escaped frame with command `46`, selector

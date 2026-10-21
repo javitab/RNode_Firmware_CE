@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -333,6 +334,56 @@ int main() {
 }
 """
         self.compile_run(source)
+
+    def test_uf2_matches_rak_nrf52840_application(self):
+        hex_path = ROOT / "build/wisblock_1w/RNode_Firmware_CE.ino.hex"
+        uf2_path = ROOT / "build/wisblock_1w/RNode_Firmware_CE.ino.uf2"
+        self.assertTrue(hex_path.is_file(), "Build the WisBlock 1W target first")
+        self.assertTrue(uf2_path.is_file(), "Generate UF2 with make uf2-wisblock_1w")
+
+        image = {}
+        upper = 0
+        for line in hex_path.read_text().splitlines():
+            record = bytes.fromhex(line[1:])
+            self.assertEqual(sum(record) & 0xFF, 0, "Invalid Intel HEX checksum")
+            count, address, kind = record[0], int.from_bytes(record[1:3], "big"), record[3]
+            if kind == 4:
+                upper = int.from_bytes(record[4:6], "big") << 16
+            elif kind == 2:
+                upper = int.from_bytes(record[4:6], "big") << 4
+            elif kind == 0:
+                start = upper + address
+                for offset, value in enumerate(record[4:4 + count]):
+                    image[start + offset] = value
+            elif kind == 1:
+                break
+
+        raw = uf2_path.read_bytes()
+        self.assertGreater(len(raw), 0)
+        self.assertEqual(len(raw) % 512, 0)
+        uf2 = {}
+        total_blocks = len(raw) // 512
+        for block_no in range(total_blocks):
+            block = raw[block_no * 512:(block_no + 1) * 512]
+            fields = struct.unpack("<IIIIIIII", block[:32])
+            magic0, magic1, flags, address, size, number, total, family = fields
+            self.assertEqual((magic0, magic1), (0x0A324655, 0x9E5D5157))
+            self.assertEqual(struct.unpack("<I", block[508:])[0], 0x0AB16F30)
+            self.assertEqual(flags, 0x2000)
+            self.assertEqual(size, 256)
+            self.assertEqual(number, block_no)
+            self.assertEqual(total, total_blocks)
+            self.assertEqual(family, 0xADA52840)
+            self.assertGreaterEqual(address, 0x26000)
+            self.assertLess(address + size, 0xED000)
+            for offset, value in enumerate(block[32:32 + size]):
+                target = address + offset
+                if target in image:
+                    self.assertEqual(value, image[target], f"HEX/UF2 mismatch at 0x{target:x}")
+                uf2[target] = value
+
+        self.assertTrue(image)
+        self.assertLessEqual(set(image), set(uf2))
 
 
 if __name__ == "__main__":

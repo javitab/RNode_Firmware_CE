@@ -77,22 +77,57 @@ arduino-cli lib install "Crypto@0.4.0"
 make firmware-wisblock_1w
 ```
 
+To also create the drag-and-drop UF2, use:
+
+```sh
+make uf2-wisblock_1w
+```
+
 The Make target stages the sketch under its required Arduino folder name, so
 it also works from renamed clones and Git worktrees. Artifacts are exported to:
 
 ```text
 build/wisblock_1w/RNode_Firmware_CE.ino.hex
 build/wisblock_1w/RNode_Firmware_CE.ino.zip
+build/wisblock_1w/RNode_Firmware_CE.ino.uf2
 ```
 
-The ZIP is the application-only serial DFU package. Do not flash a full-chip
-erase, SoftDevice or bootloader image as part of this procedure.
+The ZIP is the application-only serial DFU package. The UF2 is the application
+image for the RAK BSP's nRF52840 UF2-compatible bootloader; the converter uses
+the same family identifier (`0xADA52840`) specified in that BSP's platform.
+Neither package contains a full-chip erase, SoftDevice or bootloader image.
 
 ## Flash and provision manually
 
 These are instructions for an operator; no device is flashed by the build or
 host tests. Install `rns` (for `rnodeconf`), `adafruit-nrfutil` and `pyserial`
 using your preferred Python environment. Back up any existing configuration.
+
+### UF2 bootloader drive (double-reset)
+
+Build with `make uf2-wisblock_1w`, press RESET twice to enter the bootloader,
+and wait for the USB drive to mount in Finder. Check `INFO_UF2.TXT` on the drive
+identifies a UF2-capable nRF52840 bootloader. Drag this exact file from the
+repository onto that drive:
+
+```text
+build/wisblock_1w/RNode_Firmware_CE.ino.uf2
+```
+
+Wait for the copy to finish and the board to restart before disconnecting it.
+Do not drag the `.hex` or `.zip` there. This UF2 contains blocks tagged with the
+RAK BSP's nRF52840 family ID and targets the compiled application's addresses;
+the double-reset drive must be the matching UF2/Adafruit-compatible nRF52840
+bootloader, not an arbitrary USB volume or serial-only DFU bootloader. A UF2
+bootloader can reject a mismatched family ID or an image outside its permitted
+application region.
+
+This UF2 procedure writes the compiled application image directly. If firmware
+signature/hash validation or host provisioning is needed, use the serial DFU
+and `rnodeconf` procedure below instead; UF2 flashing does not perform that
+post-flash provisioning step.
+
+### Serial DFU and host provisioning
 
 Set `PORT` to the actual device (for example `/dev/ttyACM0` on Linux or the
 appropriate `/dev/cu.usbmodem...` on macOS). Double-tap RESET to enter the RAK

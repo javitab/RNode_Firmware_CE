@@ -24,6 +24,8 @@ endif
 
 COMMON_BUILD_FLAGS =  $(VFLAG) -e --build-property "build.partitions=no_ota" --build-property "upload.maximum_size=2097152"
 COMMON_ESP_UPLOAD_FLAGS = $(VFLAG) --chip esp32 --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB 0x210000
+ARDUINO_DATA_DIR ?= $(shell arduino-cli config get directories.data)
+RAK_NRF52_VERSION ?= 1.3.3
 
 all: release
 
@@ -152,7 +154,10 @@ firmware-wisblock_1w:
 	cp -R src Fonts build/wisblock_1w/sketch/RNode_Firmware_CE/
 	arduino-cli compile build/wisblock_1w/sketch/RNode_Firmware_CE --fqbn rakwireless:nrf52:WisCoreRAK4631Board $(VFLAG) -e --output-dir build/wisblock_1w --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x51\" \"-DBOARD_VARIANT=0x12\" \"-DWISBLOCK_1W\""
 
-test-wisblock_1w:
+uf2-wisblock_1w: firmware-wisblock_1w
+	python3 "$(ARDUINO_DATA_DIR)/packages/rakwireless/hardware/nrf52/$(RAK_NRF52_VERSION)/tools/uf2conv/uf2conv.py" --convert --family 0xADA52840 --output build/wisblock_1w/RNode_Firmware_CE.ino.uf2 build/wisblock_1w/RNode_Firmware_CE.ino.hex
+
+test-wisblock_1w: uf2-wisblock_1w
 	python3 -m unittest discover -s tests -p 'test_wisblock_1w.py'
 
 firmware-rak4631_sx1280:

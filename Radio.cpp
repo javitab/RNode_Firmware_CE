@@ -673,17 +673,21 @@ void sx126x::poll()
 
     uint8_t irq[2] = {0};
     executeOpcodeRead(OP_GET_IRQ_STATUS_6X, irq, 2);
-    if ((irq[1] & IRQ_RX_DONE_MASK_6X) == 0) { return; }
+    bool rx_done = (irq[1] & IRQ_RX_DONE_MASK_6X) != 0;
+    bool header_error = (irq[1] & IRQ_HEADER_ERROR_MASK_6X) != 0;
+    if (!rx_done && !header_error) { return; }
 
     // Freeze the RX buffer while the normal RNode framing callback reads it.
     standby();
     bool valid = getPacketValidity();
-    uint8_t rxbuf[2] = {0};
-    executeOpcodeRead(OP_RX_BUFFER_STATUS_6X, rxbuf, 2);
-    if (valid && (irq[1] & IRQ_HEADER_ERROR_MASK_6X) == 0 && rxbuf[0] > 0) {
-        handleDio0Rise();
+    if (rx_done && valid && !header_error) {
+        uint8_t rxbuf[2] = {0};
+        executeOpcodeRead(OP_RX_BUFFER_STATUS_6X, rxbuf, 2);
+        if (rxbuf[0] > 0) {
+            handleDio0Rise();
+        }
     }
-    receive();
+    receive(_implicitHeaderMode ? _payloadLength : 0);
 }
 
 void sx126x::receive(int size)

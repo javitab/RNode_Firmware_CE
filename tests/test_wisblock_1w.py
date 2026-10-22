@@ -317,6 +317,7 @@ void (*onIntRise[1])() = {nullptr};
 """ + defines + r"""
 struct sx126x {
     int _dio0 = -1, _index = 0, callbacks = 0, resumes = 0, standbys = 0, tx_drive = 0;
+    int _implicitHeaderMode = 0, _payloadLength = 255, last_receive_size = -1;
     bool _radio_online = true, _tcxo = true, valid = true;
     void (*_onReceive)(uint8_t, int) = [](uint8_t, int) {};
     int8_t _txp = 0;
@@ -327,7 +328,16 @@ struct sx126x {
     }
     bool getPacketValidity() { irq = 0; return valid; }
     void standby() { ++standbys; }
-    void receive() { ++resumes; }
+    void receive(int size = 0) {
+        ++resumes;
+        last_receive_size = size;
+        if (size > 0) {
+            _implicitHeaderMode = 1;
+            _payloadLength = size;
+        } else {
+            _implicitHeaderMode = 0;
+        }
+    }
     void handleDio0Rise() { ++callbacks; }
     uint8_t readRegister(int) { return 0; }
     void writeRegister(int, int) {}
@@ -362,21 +372,40 @@ int main() {
     radio.poll();
     assert(radio.callbacks == 1 && radio.resumes == 4);
     radio.length = 10;
+    radio.irq = IRQ_HEADER_ERROR_MASK_6X;
+    radio.poll();
+    assert(radio.callbacks == 1 && radio.resumes == 5 && radio.irq == 0);
+    radio.irq = IRQ_RX_DONE_MASK_6X;
+    radio.poll();
+    assert(radio.callbacks == 2 && radio.resumes == 6);
+
+    radio._implicitHeaderMode = 1;
+    radio._payloadLength = 23;
+    radio.irq = IRQ_RX_DONE_MASK_6X;
+    radio.poll();
+    assert(radio.callbacks == 3 && radio.resumes == 7);
+    assert(radio._implicitHeaderMode == 1 && radio._payloadLength == 23);
+    assert(radio.last_receive_size == 23);
+    radio.irq = IRQ_RX_DONE_MASK_6X;
+    radio.poll();
+    assert(radio.callbacks == 4 && radio.resumes == 8);
+    assert(radio._implicitHeaderMode == 1 && radio._payloadLength == 23);
+    assert(radio.last_receive_size == 23);
     radio.irq = IRQ_RX_DONE_MASK_6X;
     radio._dio0 = 10;
     radio.onReceive([](uint8_t, int) {});
     assert(attaches == 1);
     radio.poll();
-    assert(radio.callbacks == 1 && radio.resumes == 4);
+    assert(radio.callbacks == 4 && radio.resumes == 8);
     radio._dio0 = -1;
     radio._radio_online = false;
     radio.poll();
-    assert(radio.callbacks == 1 && radio.resumes == 4);
+    assert(radio.callbacks == 4 && radio.resumes == 8);
     radio.onReceive(nullptr);
     assert(detaches == 0);
     radio._radio_online = true;
     radio.poll();
-    assert(radio.callbacks == 1);
+    assert(radio.callbacks == 4);
     radio.setTxPower(22, 1);
     assert(radio._txp == 22 && radio.tx_drive == 22);
     radio.setTxPower(30, 1);

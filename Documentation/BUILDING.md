@@ -28,6 +28,7 @@ Next, you need to find the name of the target for your board. Please reference t
 | :--- | :---: |
 | Handheld v2.x RNodes | `rnode_ng_20` |
 | RAK4631 | `rak4631` |
+| RAK3401 + RAK13302 on RAK19007 | `wisblock_1w` ([instructions and power requirements](WISBLOCK_1W.md)) |
 | LilyGO T-BEAM v1.1 | `tbeam` |
 | LilyGO T-BEAM v1.1 (SX1262) | `tbeam_sx126x` |
 | LilyGO LoRa32 v1.0 | `lora32_v10` |
@@ -46,6 +47,10 @@ Ensure you replace [target] with the target you selected. For example:
 `make firmware-rak4631`
 
 ## Flashing
+For `wisblock_1w`, use the explicit build artifact and provisioning procedure in
+[the WisBlock 1W guide](WISBLOCK_1W.md), not `upload-rak4631` or an upstream
+autoinstall image.
+
 To flash the chosen board (if you have one), simply connect it to your computer over USB, and then run the following:
 
 `make upload-[target]`

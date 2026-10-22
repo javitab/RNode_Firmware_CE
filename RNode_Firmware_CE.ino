@@ -24,7 +24,11 @@
       SPIClass interface_spi[1] = {
             // SX1262
             SPIClass(
-                NRF_SPIM2, 
+              #if defined(WISBLOCK_1W)
+                NRF_SPIM3,
+              #else
+                NRF_SPIM2,
+              #endif
                 interface_pins[0][3], 
                 interface_pins[0][1], 
                 interface_pins[0][2]
@@ -203,6 +207,10 @@ void setup() {
         digitalWrite(interface_pins[i][9], HIGH);
     }
   }
+
+  #if defined(WISBLOCK_1W)
+    delay(50);
+  #endif
 
   // Initialise buffers
   memset(pbuf, 0, sizeof(pbuf));
@@ -467,7 +475,7 @@ inline void kiss_write_packet(int index) {
 
 inline void getPacketData(RadioInterface* radio, uint16_t len) {
     uint8_t index = radio->getIndex();
-  #if MCU_VARIANT != MCU_NRF52
+  #if MCU_VARIANT != MCU_NRF52 || defined(WISBLOCK_1W)
     while (len-- && read_len[index] < MTU) {
       pbuf[read_len[index]++] = radio->read();
     }  
@@ -499,7 +507,11 @@ inline bool queue_packet(RadioInterface* radio, uint8_t index) {
     // unable to receive the packet.
     modem_packet->len = read_len[index];
     memcpy(modem_packet->data, pbuf, read_len[index]);
+    #if defined(WISBLOCK_1W)
+    if (!modem_packet_queue || xQueueSend(modem_packet_queue, &modem_packet, 0) != pdPASS) {
+    #else
     if (!modem_packet_queue || xQueueSendFromISR(modem_packet_queue, &modem_packet, NULL) != pdPASS) {
+    #endif
         free(modem_packet);
         return false;
     }
@@ -525,7 +537,7 @@ void ISR_VECT receive_callback(uint8_t index, int packet_size) {
       // This is the first part of a split
       // packet, so we set the seq variable
       // and add the data to the buffer
-      #if MCU_VARIANT == MCU_NRF52
+      #if MCU_VARIANT == MCU_NRF52 && !defined(WISBLOCK_1W)
         int_mask = taskENTER_CRITICAL_FROM_ISR(); read_len[index] = 0; taskEXIT_CRITICAL_FROM_ISR(int_mask);
       #else
         read_len[index] = 0;
@@ -550,7 +562,7 @@ void ISR_VECT receive_callback(uint8_t index, int packet_size) {
       // same sequence id, so we must assume
       // that we are seeing the first part of
       // a new split packet.
-      #if MCU_VARIANT == MCU_NRF52
+      #if MCU_VARIANT == MCU_NRF52 && !defined(WISBLOCK_1W)
         int_mask = taskENTER_CRITICAL_FROM_ISR(); read_len[index] = 0; taskEXIT_CRITICAL_FROM_ISR(int_mask);
       #else
         read_len[index] = 0;
@@ -567,7 +579,7 @@ void ISR_VECT receive_callback(uint8_t index, int packet_size) {
       if (seq[index] != SEQ_UNSET) {
         // If we already had part of a split
         // packet in the buffer, we clear it.
-        #if MCU_VARIANT == MCU_NRF52
+        #if MCU_VARIANT == MCU_NRF52 && !defined(WISBLOCK_1W)
           int_mask = taskENTER_CRITICAL_FROM_ISR(); read_len[index] = 0; taskEXIT_CRITICAL_FROM_ISR(int_mask);
         #else
           read_len[index] = 0;
@@ -589,7 +601,7 @@ void ISR_VECT receive_callback(uint8_t index, int packet_size) {
     ready = true;
   }
 
-  #if MCU_VARIANT == MCU_NRF52
+  #if MCU_VARIANT == MCU_NRF52 && !defined(WISBLOCK_1W)
   // Temporary fix for permanent preamble detected bug
   // TODO: figure out how to prevent the timing issue which causes the IRQ to never be cleared
   interface_obj[0]->getPacketValidity();
@@ -1229,6 +1241,24 @@ void serial_callback(uint8_t sbyte) {
           }
     } else if (command == CMD_BT_CTRL) {
       #if HAS_BLUETOOTH || HAS_BLE
+        #if defined(WISBLOCK_1W)
+        if (sbyte == 0xFF) {
+          serial_write(FEND);
+          serial_write(CMD_BT_CTRL);
+          serial_write(0xFF);
+          serial_write(0x01);
+          escaped_serial_write(bt_ready);
+          escaped_serial_write(bt_state);
+          escaped_serial_write(bt_enabled);
+          escaped_serial_write(bt_allow_pairing);
+          escaped_serial_write(bt_ready && Bluefruit.Advertising.isRunning());
+          escaped_serial_write(bt_advertising_started);
+          for (size_t i = 0; i < sizeof(bt_devname) && bt_devname[i]; i++) {
+            escaped_serial_write(bt_devname[i]);
+          }
+          serial_write(FEND);
+        } else
+        #endif
         if (sbyte == 0x00) {
           bt_stop();
           bt_conf_save(false);
@@ -1551,7 +1581,11 @@ void loop() {
     for (int i = 0; i < INTERFACE_COUNT; i++) {
         selected_radio = interface_obj_sorted[i];
 
-        if (selected_radio->calculateALock() || !selected_radio->getRadioOnline()) {
+        if (!selected_radio->getRadioOnline()) {
+            continue;
+        }
+        selected_radio->poll();
+        if (selected_radio->calculateALock()) {
             // skip this interface
             continue;
         }

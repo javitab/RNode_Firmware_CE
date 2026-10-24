@@ -1215,8 +1215,6 @@
         #define BLE_PAIRING_PIN 123456
         #undef HAS_INPUT
         #define HAS_INPUT false
-        #undef HAS_PMU
-        #define HAS_PMU false
       #else
         #define BLE_MODEL "RAK4640"
       #endif

@@ -169,6 +169,51 @@ source available with any distributed firmware, in accordance with GPLv3.
 
 ## Connect and use BLE
 
+### Battery telemetry
+
+The `wisblock_1w` target measures the RAK19007 battery input on `WB_A0`
+(nRF52840 P0.05/AIN3). Battery monitoring is enabled even though there is no
+software-controlled PMU. The ADC uses a 3.0 V reference, 12-bit resolution and
+40 microsecond acquisition time for the high-impedance divider. RAK19007
+schematics specify R3 = 1 Mohm and R4 = 1.5 Mohm: the ideal conversion is
+`VBAT = ADC * (3.0 / 4096) * (5 / 3)` volts. This target does not use the
+stock RAK4631 path's empirical 1.73 compensation factor.
+
+Five one-second samples are averaged without modifying the voltage samples.
+The LiPo voltage estimate maps 3.3 V to 0%, 3.6 V to 10% and 4.2 V to 100%,
+clamped to 0-100%. Both the BLE Battery Service and the periodic RNode
+`CMD_STAT_BAT` (`0x27`, state byte followed by percentage byte) report this
+estimate. MeshChatX/Reticulum uses the RNode packets, not just the BLE service.
+Allow about ten seconds after boot for the first RNode battery packet.
+Percentage is a voltage-based estimate, not a fuel gauge; load, charging,
+temperature, cell chemistry and component tolerances affect it.
+
+Without USB, a plausible battery voltage is reported as discharging.
+With USB, the charge state is **unknown**, not automatically charging or full.
+The RAK19007 charger has no MCU-readable battery-presence or charge-state
+signal; with no cell attached it can bias VBAT to a plausible battery voltage.
+USB-only operation therefore cannot reliably distinguish an absent battery
+from an attached one using this ADC alone. The percentage remains a voltage
+estimate, not proof a battery exists. Out-of-range readings (below 2.5 V or
+above 4.35 V) report unknown/0%; the BLE Battery Service has no unknown-state
+field. No USB-forced 100% or fabricated charging indication is sent.
+
+On the tested board (USB serial `0BF7C98F5B79572E`), the operator confirmed
+a battery was attached. After application-only serial DFU of the battery fix,
+USB captured repeated `0x27` packets reporting 60-61% with state unknown while
+USB was connected. The stored and running firmware hashes matched the build,
+and EEPROM checksum/signature validation remained intact. This confirms real
+device sampling and RNode packet reporting, not calibrated state-of-charge
+accuracy. Direct BLE Battery Service reads, battery-only discharge-state
+reporting and the USB-only/no-cell behavior still require hardware checks.
+
+Hardware sources:
+[RAK19007 power and slot schematics](https://docs.rakwireless.com/product-categories/wisblock/rak19007/datasheet/#schematic-diagram),
+[RAK3401 connector mapping](https://docs.rakwireless.com/product-categories/wisblock/rak3401/datasheet/),
+and [RAK's battery measurement example](https://github.com/RAKWireless/WisBlock/blob/master/examples/RAK4630/power/RAK4630_Battery_Level_Detect/Read_Battery_Level/Read_Battery_Level.ino).
+
+### Pairing and transport
+
 For this target only, BLE starts at every boot, even with blank configuration
 or a previously saved Bluetooth-disable setting. Pairing stays available while
 BLE is on; there is no button/display requirement or 35-second pairing timeout.
@@ -253,6 +298,9 @@ BLE lifecycle functions, radio polling and TX-power setter with mocked hardware
 APIs. It covers legacy/new pin isolation, fixed versus generated PINs, pairing
 timeout behavior, reconnect/stop/start, encrypted UART permissions, rejected
 Just Works bonds, rejected CRC/header-error/empty packets and 22 dBm drive.
+Battery tests execute the real ADC initialization, averaging, voltage-to-percent
+conversion, periodic KISS framing and BLE Battery Service updates with mocked
+ADC/USB inputs, including low voltage, USB, out-of-range inputs and ring wraps.
 These checks require Python 3 and a host `c++` compiler.
 
 The target has compiled with RAK nRF52 BSP 1.3.3 and Crypto 0.4.0. On one

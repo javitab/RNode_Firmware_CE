@@ -198,6 +198,15 @@ estimate, not proof a battery exists. Out-of-range readings (below 2.5 V or
 above 4.35 V) report unknown/0%; the BLE Battery Service has no unknown-state
 field. No USB-forced 100% or fabricated charging indication is sent.
 
+On the tested board (USB serial `0BF7C98F5B79572E`), the operator confirmed
+a battery was attached. After application-only serial DFU of the battery fix,
+USB captured repeated `0x27` packets reporting 60-61% with state unknown while
+USB was connected. The stored and running firmware hashes matched the build,
+and EEPROM checksum/signature validation remained intact. This confirms real
+device sampling and RNode packet reporting, not calibrated state-of-charge
+accuracy. Direct BLE Battery Service reads, battery-only discharge-state
+reporting and the USB-only/no-cell behavior still require hardware checks.
+
 Hardware sources:
 [RAK19007 power and slot schematics](https://docs.rakwireless.com/product-categories/wisblock/rak19007/datasheet/#schematic-diagram),
 [RAK3401 connector mapping](https://docs.rakwireless.com/product-categories/wisblock/rak3401/datasheet/),

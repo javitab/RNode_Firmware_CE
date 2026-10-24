@@ -71,7 +71,12 @@
   #define BAT_V_FLOAT     4.22
   #define BAT_SAMPLES     5
   #define VBAT_MV_PER_LSB (0.73242188F) // 3.0V ADC range and 12 - bit ADC resolution = 3000mV / 4096
-  #define VBAT_DIVIDER_COMP (1.73)      // Compensation factor for the VBAT divider
+  #if defined(WISBLOCK_1W)
+    // RAK19007 R3 = 1 Mohm, R4 = 1.5 Mohm; ADC_VBAT = VBAT * 3/5.
+    #define VBAT_DIVIDER_COMP (5.0F / 3.0F)
+  #else
+    #define VBAT_DIVIDER_COMP (1.73)      // Compensation factor for the VBAT divider
+  #endif
   #define VBAT_MV_PER_LSB_FIN (VBAT_DIVIDER_COMP * VBAT_MV_PER_LSB)
   #define PIN_VBAT WB_A0
   float bat_p_samples[BAT_SAMPLES];
@@ -347,6 +352,44 @@ void measure_battery() {
       battery_ready = false;
     }
 
+  #elif defined(WISBLOCK_1W)
+    bat_v_samples[bat_samples_count++] =
+      (float)analogRead(PIN_VBAT) * VBAT_MV_PER_LSB_FIN / 1000.0F;
+
+    if (bat_samples_count == BAT_SAMPLES) {
+      bat_samples_count = 0;
+      battery_ready = true;
+    }
+
+    if (battery_ready) {
+      battery_voltage = 0;
+      for (uint8_t bi = 0; bi < BAT_SAMPLES; bi++) {
+        battery_voltage += bat_v_samples[bi];
+      }
+      battery_voltage /= BAT_SAMPLES;
+
+      nrfx_power_usb_state_t usbstate = nrfx_power_usbstatus_get();
+      external_power = usbstate == NRFX_POWER_USB_STATE_CONNECTED ||
+                       usbstate == NRFX_POWER_USB_STATE_READY;
+      // The charger can bias VBAT even without a cell; voltage is not presence detection.
+      battery_indeterminate = true;
+      battery_installed = battery_voltage >= 2.5F && battery_voltage <= 4.35F;
+      battery_state = BATTERY_STATE_UNKNOWN;
+      battery_percent = 0;
+      if (battery_installed) {
+        if (battery_voltage >= 3.6F) {
+          battery_percent = 10.0F + (battery_voltage - 3.6F) * 150.0F;
+        } else if (battery_voltage > 3.3F) {
+          battery_percent = (battery_voltage - 3.3F) * (10.0F / 0.3F);
+        }
+        if (battery_percent > 100.0F) battery_percent = 100.0F;
+        if (!external_power) battery_state = BATTERY_STATE_DISCHARGING;
+      }
+
+      #if HAS_BLE
+        if (bt_state != BT_STATE_OFF) blebas.write((uint8_t)battery_percent);
+      #endif
+    }
   #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
     battery_installed = true;
     battery_indeterminate = false;
@@ -574,6 +617,11 @@ bool init_pmu() {
 
     // Set the resolution to 12-bit (0..4095)
     analogReadResolution(12);
+
+    #if defined(WISBLOCK_1W)
+      // The RAK19007 divider has a 600 kohm source impedance.
+      analogSampleTime(40);
+    #endif
 
     // Let the ADC settle
     delay(1);

@@ -56,7 +56,7 @@ int main() {
     assert(interfaces[0] == SX1262);
     assert(!interface_cfg[0][0] && interface_cfg[0][1] && interface_cfg[0][2]);
 #ifdef WISBLOCK_1W
-    static_assert(HAS_BLE && !HAS_INPUT && !HAS_PMU, "headless BLE target");
+    static_assert(HAS_BLE && !HAS_INPUT && HAS_PMU, "headless BLE with battery ADC");
     static_assert(BLE_PAIRING_PIN == 123456, "fixed PIN");
     const int8_t expected[] = {26, 3, 30, 29, 9, -1, 4, -1, 21, 34};
 #else
@@ -75,6 +75,112 @@ int main() {
                 if target:
                     flags.append("-DWISBLOCK_1W")
                 self.compile_run(source, {"variant.h": ""}, flags)
+
+    def test_wisblock_battery_measurement_and_reporting(self):
+        source = r"""
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <string>
+#define BOARD_MODEL 0x51
+#define BOARD_RAK4631 0x51
+#define WISBLOCK_1W
+#define HAS_BLE true
+#define WB_A0 5
+#define AR_INTERNAL_3_0 3
+#define BT_STATE_OFF 0
+#define BT_STATE_ON 1
+#define BT_STATE_CONNECTED 3
+#define BATTERY_STATE_UNKNOWN 0
+#define BATTERY_STATE_DISCHARGING 1
+#define BATTERY_STATE_CHARGING 2
+#define BATTERY_STATE_CHARGED 3
+bool battery_ready = false, battery_installed = false;
+bool battery_indeterminate = false, external_power = false;
+float battery_voltage = 0, battery_percent = 0;
+uint8_t battery_state = 0, bt_state = BT_STATE_ON;
+int adc = 0, reference = 0, resolution = 0, sample_time = 0;
+uint32_t now = 0;
+uint32_t millis() { return now; }
+void analogReference(int value) { reference = value; }
+void analogReadResolution(int value) { resolution = value; }
+void analogSampleTime(int value) { sample_time = value; }
+int analogRead(int pin) { assert(pin == WB_A0); return adc; }
+void delay(int) {}
+struct BatteryService {
+    int percent = -1, writes = 0;
+    void write(uint8_t value) { percent = value; ++writes; }
+} blebas;
+#define FEND 0xc0
+#define CMD_STAT_BAT 0x27
+std::string frames;
+void serial_write(uint8_t value) { frames += char(value); }
+void escaped_serial_write(uint8_t value) {
+    assert(value != 0xc0 && value != 0xdb);
+    serial_write(value);
+}
+BATTERY_INDICATION
+#include "Power.h"
+void sample(float voltage, bool usb = false) {
+    pmu_rc = 0;
+    usbstate = usb ? NRFX_POWER_USB_STATE_READY : NRFX_POWER_USB_STATE_DISCONNECTED;
+    adc = lround(voltage * 1000.0F / VBAT_MV_PER_LSB_FIN);
+    for (int i = 0; i < BAT_SAMPLES; ++i) {
+        now += 1000;
+        update_pmu();
+    }
+    assert(fabs(battery_voltage - voltage) < 0.002F);
+    assert(blebas.percent == (uint8_t)battery_percent);
+    assert(frames.size() >= 5);
+    auto frame = frames.substr(frames.size()-5);
+    assert((uint8_t)frame[0] == FEND && (uint8_t)frame[1] == CMD_STAT_BAT);
+    assert((uint8_t)frame[2] == battery_state);
+    assert((uint8_t)frame[3] == blebas.percent && (uint8_t)frame[4] == FEND);
+}
+int main() {
+    assert(init_pmu());
+    assert(reference == 3 && resolution == 12 && sample_time == 40);
+    adc = 3031; // Approximately 3.7 V through the actual 5/3 divider.
+    for (int i = 1; i < BAT_SAMPLES; ++i) { now += 1000; update_pmu(); }
+    assert(!battery_ready && frames.empty() && blebas.writes == 0);
+    now += 1000; update_pmu();
+    assert(battery_ready && battery_percent > 24 && battery_percent < 26);
+    sample(3.45F); assert(battery_percent > 4.9F && battery_percent < 5.1F);
+    sample(3.3F); assert(battery_percent < 0.1F);
+    sample(3.0F); assert(battery_percent == 0 && battery_installed);
+    sample(3.6F); assert(battery_percent > 9.9F && battery_percent < 10.1F);
+    sample(4.2F); assert(battery_percent > 99.8F);
+    assert(battery_state == BATTERY_STATE_DISCHARGING);
+    bt_state = BT_STATE_CONNECTED;
+    sample(3.8F, true);
+    assert(battery_state == BATTERY_STATE_UNKNOWN && battery_indeterminate);
+    assert(blebas.percent >= 39 && blebas.percent <= 40); // Not a USB-forced 100%.
+    usbstate = NRFX_POWER_USB_STATE_CONNECTED;
+    measure_battery();
+    assert(external_power && battery_state == BATTERY_STATE_UNKNOWN);
+    sample(4.3F, true); assert(battery_percent == 100);
+    sample(0, true);
+    assert(!battery_installed && battery_percent == 0);
+    assert(battery_state == BATTERY_STATE_UNKNOWN && external_power);
+    sample(4.9F, true); assert(!battery_installed && battery_percent == 0);
+    sample(3.9F); assert(!external_power && battery_state == BATTERY_STATE_DISCHARGING);
+    // Exercise many ring-buffer wraps and keep voltage samples in volts.
+    for (int i = 0; i < 300; ++i) sample(3.9F);
+    auto writes = blebas.writes;
+    bt_state = BT_STATE_OFF; sample(3.9F);
+    assert(writes == blebas.writes);
+}
+"""
+        indication = method((ROOT / "Utilities.h").read_text(), "void kiss_indicate_battery()")
+        source = source.replace("BATTERY_INDICATION", indication)
+        self.compile_run(source, {"nrfx_power.h": """
+enum nrfx_power_usb_state_t {
+    NRFX_POWER_USB_STATE_DISCONNECTED, NRFX_POWER_USB_STATE_CONNECTED,
+    NRFX_POWER_USB_STATE_READY
+};
+nrfx_power_usb_state_t usbstate = NRFX_POWER_USB_STATE_DISCONNECTED;
+nrfx_power_usb_state_t nrfx_power_usbstatus_get() { return usbstate; }
+"""})
 
     def test_ble_lifecycle_and_legacy_pin(self):
         source = r"""
